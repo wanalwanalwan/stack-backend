@@ -1,4 +1,8 @@
 -- Update nearby_available_players to also return first_name and last_name
+-- Postgres cannot CREATE OR REPLACE a function if the OUT/return row type changes,
+-- so we drop it first before recreating with the new return signature.
+drop function if exists public.nearby_available_players(double precision, double precision, double precision);
+
 create or replace function public.nearby_available_players(
   lat double precision,
   lng double precision,

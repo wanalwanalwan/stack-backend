@@ -1,4 +1,8 @@
 -- Update nearby_games to return creator info (username, first_name, last_name)
+-- Postgres cannot CREATE OR REPLACE a function if the OUT/return row type changes,
+-- so we drop it first before recreating with the new return signature.
+drop function if exists public.nearby_games(double precision, double precision, double precision);
+
 create or replace function public.nearby_games(
   lat double precision,
   lng double precision,
