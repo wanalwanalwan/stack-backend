@@ -27,3 +27,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# AI tooling / local agent settings
+.claude/
+
+# Windows reserved device-name file (can break git add)
+nul

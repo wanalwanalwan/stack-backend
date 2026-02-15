@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { username, dupr_id, dupr_rating, latitude, longitude, avatar_url } = body;
+    const { username, first_name, middle_name, last_name, dupr_id, dupr_rating, latitude, longitude, avatar_url } = body;
 
     // --- Build the update object (only include fields that were provided) ---
 
@@ -48,6 +48,67 @@ Deno.serve(async (req) => {
         );
       }
       updates.username = username.trim();
+    }
+
+    if (first_name !== undefined) {
+      if (typeof first_name !== "string" || first_name.trim().length === 0) {
+        return new Response(
+          JSON.stringify({ error: "first_name cannot be empty" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (first_name.trim().length > 50) {
+        return new Response(
+          JSON.stringify({ error: "first_name must be 50 characters or fewer" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      updates.first_name = first_name.trim();
+    }
+
+    if (last_name !== undefined) {
+      if (typeof last_name !== "string" || last_name.trim().length === 0) {
+        return new Response(
+          JSON.stringify({ error: "last_name cannot be empty" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      if (last_name.trim().length > 50) {
+        return new Response(
+          JSON.stringify({ error: "last_name must be 50 characters or fewer" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      updates.last_name = last_name.trim();
+    }
+
+    if (middle_name !== undefined) {
+      if (middle_name === null || (typeof middle_name === "string" && middle_name.trim().length === 0)) {
+        updates.middle_name = null;
+      } else if (typeof middle_name === "string") {
+        if (middle_name.trim().length > 50) {
+          return new Response(
+            JSON.stringify({ error: "middle_name must be 50 characters or fewer" }),
+            {
+              status: 400,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
+        updates.middle_name = middle_name.trim();
+      }
     }
 
     if (dupr_id !== undefined) updates.dupr_id = dupr_id;

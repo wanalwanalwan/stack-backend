@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { username, dupr_id, dupr_rating, latitude, longitude } = body;
+    const { username, first_name, middle_name, last_name, dupr_id, dupr_rating, latitude, longitude } = body;
 
     // --- Validate required fields ---
 
@@ -46,9 +46,71 @@ Deno.serve(async (req) => {
       );
     }
 
-    // --- Validate DUPR rating if provided ---
+    // --- Validate name fields ---
 
-    if (dupr_rating != null && (dupr_rating < 1.0 || dupr_rating > 8.0)) {
+    if (!first_name || typeof first_name !== "string" || first_name.trim().length === 0) {
+      return new Response(
+        JSON.stringify({ error: "first_name is required" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (first_name.trim().length > 50) {
+      return new Response(
+        JSON.stringify({ error: "first_name must be 50 characters or fewer" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (!last_name || typeof last_name !== "string" || last_name.trim().length === 0) {
+      return new Response(
+        JSON.stringify({ error: "last_name is required" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (last_name.trim().length > 50) {
+      return new Response(
+        JSON.stringify({ error: "last_name must be 50 characters or fewer" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (middle_name != null && typeof middle_name === "string" && middle_name.trim().length > 50) {
+      return new Response(
+        JSON.stringify({ error: "middle_name must be 50 characters or fewer" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    // --- Validate DUPR rating (required) ---
+
+    if (dupr_rating == null) {
+      return new Response(
+        JSON.stringify({ error: "dupr_rating is required" }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (dupr_rating < 1.0 || dupr_rating > 8.0) {
       return new Response(
         JSON.stringify({ error: "dupr_rating must be between 1.0 and 8.0" }),
         {
@@ -81,10 +143,15 @@ Deno.serve(async (req) => {
     const row: Record<string, unknown> = {
       id: user.id,
       username: username.trim(),
+      first_name: first_name.trim(),
+      last_name: last_name.trim(),
+      dupr_rating,
     };
 
+    if (middle_name != null && typeof middle_name === "string" && middle_name.trim().length > 0) {
+      row.middle_name = middle_name.trim();
+    }
     if (dupr_id) row.dupr_id = dupr_id;
-    if (dupr_rating != null) row.dupr_rating = dupr_rating;
 
     if (latitude != null && longitude != null) {
       row.location = `SRID=4326;POINT(${longitude} ${latitude})`;
