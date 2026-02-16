@@ -365,6 +365,35 @@ inspector_port = 8083
 # The Deno major version to use.
 deno_version = 2
 
+# Edge functions handle their own auth via createUserClient(req) + getUser(),
+# so we disable Kong's JWT verification to avoid double-auth issues.
+[functions.create-profile]
+verify_jwt = false
+
+[functions.update-profile]
+verify_jwt = false
+
+[functions.create-game]
+verify_jwt = false
+
+[functions.cancel-game]
+verify_jwt = false
+
+[functions.rsvp-to-game]
+verify_jwt = false
+
+[functions.cancel-rsvp]
+verify_jwt = false
+
+[functions.set-availability]
+verify_jwt = false
+
+[functions.create-post]
+verify_jwt = false
+
+[functions.cleanup-expired-availability]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
