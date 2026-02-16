@@ -155,6 +155,9 @@ Deno.serve(async (req) => {
       row.location = `SRID=4326;POINT(${longitude} ${latitude})`;
     }
 
+    // Creator is automatically a participant, so start with 1 spot filled
+    row.spots_filled = 1;
+
     // --- Insert the game ---
 
     const { data: game, error: insertError } = await supabase
@@ -164,6 +167,18 @@ Deno.serve(async (req) => {
       .single();
 
     if (insertError) throw insertError;
+
+    // --- Auto-join the creator as a confirmed participant ---
+
+    const { error: participantError } = await supabase
+      .from("game_participants")
+      .insert({
+        game_id: game.id,
+        user_id: user.id,
+        rsvp_status: "confirmed",
+      });
+
+    if (participantError) throw participantError;
 
     return new Response(
       JSON.stringify({ success: true, game }),
