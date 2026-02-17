@@ -166,13 +166,12 @@ Deno.serve(async (req) => {
       if (insertError) throw insertError;
     }
 
-    // Atomically increment spots_filled using RPC
-    // We use a raw SQL call via supabase to atomically increment
-    const { error: updateError } = await supabase
-      .from("games")
-      .update({ spots_filled: game.spots_filled + 1 })
-      .eq("id", game_id)
-      .eq("spots_filled", game.spots_filled); // optimistic concurrency check
+    // Atomically increment spots_filled using SECURITY DEFINER RPC
+    // (bypasses RLS so non-creators can update the count)
+    const { error: updateError } = await supabase.rpc(
+      "increment_spots_filled",
+      { p_game_id: game_id },
+    );
 
     if (updateError) {
       throw new Error(
