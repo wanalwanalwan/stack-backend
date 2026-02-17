@@ -33,6 +33,7 @@ Deno.serve(async (req) => {
       skill_level_max,
       spots_available,
       game_format,
+      session_name,
       description,
     } = body;
 
@@ -145,6 +146,7 @@ Deno.serve(async (req) => {
       game_format,
     };
 
+    if (session_name) row.session_name = session_name;
     if (location_name) row.location_name = location_name;
     if (description) row.description = description;
     if (skill_level_min != null) row.skill_level_min = skill_level_min;
