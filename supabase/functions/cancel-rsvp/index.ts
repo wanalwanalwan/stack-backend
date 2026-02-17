@@ -74,21 +74,12 @@ Deno.serve(async (req) => {
 
     // Decrement spots_filled if the user was confirmed
     if (wasConfirmed) {
-      const { data: game } = await supabase
-        .from("games")
-        .select("spots_filled")
-        .eq("id", game_id)
-        .single();
+      const { error: gameUpdateError } = await supabase.rpc(
+        "decrement_spots_filled",
+        { p_game_id: game_id },
+      );
 
-      if (game && game.spots_filled > 0) {
-        const { error: gameUpdateError } = await supabase
-          .from("games")
-          .update({ spots_filled: game.spots_filled - 1 })
-          .eq("id", game_id)
-          .eq("spots_filled", game.spots_filled); // optimistic concurrency
-
-        if (gameUpdateError) throw gameUpdateError;
-      }
+      if (gameUpdateError) throw gameUpdateError;
     }
 
     return new Response(
