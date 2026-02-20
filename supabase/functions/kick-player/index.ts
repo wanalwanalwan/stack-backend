@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { createUserClient } from "../_shared/supabase-client.ts";
+import { createUserClient, createAdminClient } from "../_shared/supabase-client.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -8,6 +8,7 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = createUserClient(req);
+    const adminClient = createAdminClient();
 
     // Verify the user is authenticated
     const {
@@ -71,8 +72,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Find the participant's RSVP
-    const { data: rsvp, error: rsvpError } = await supabase
+    // Find the participant's RSVP (use admin client to bypass RLS)
+    const { data: rsvp, error: rsvpError } = await adminClient
       .from("game_participants")
       .select("id, rsvp_status")
       .eq("game_id", game_id)
@@ -92,8 +93,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Cancel their RSVP
-    const { error: updateError } = await supabase
+    // Cancel their RSVP (use admin client to bypass RLS)
+    const { error: updateError } = await adminClient
       .from("game_participants")
       .update({ rsvp_status: "cancelled" })
       .eq("id", rsvp.id);
@@ -101,7 +102,7 @@ Deno.serve(async (req) => {
     if (updateError) throw updateError;
 
     // Decrement spots_filled
-    const { error: decrementError } = await supabase.rpc(
+    const { error: decrementError } = await adminClient.rpc(
       "decrement_spots_filled",
       { p_game_id: game_id },
     );
@@ -116,8 +117,9 @@ Deno.serve(async (req) => {
       },
     );
   } catch (err) {
+    console.error("kick-player error:", err);
     return new Response(
-      JSON.stringify({ error: err.message }),
+      JSON.stringify({ error: err.message, detail: String(err) }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

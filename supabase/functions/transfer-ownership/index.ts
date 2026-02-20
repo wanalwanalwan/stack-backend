@@ -1,5 +1,5 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { createUserClient } from "../_shared/supabase-client.ts";
+import { createUserClient, createAdminClient } from "../_shared/supabase-client.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -8,6 +8,7 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = createUserClient(req);
+    const adminClient = createAdminClient();
 
     // Verify the user is authenticated
     const {
@@ -92,8 +93,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Transfer ownership
-    const { error: updateError } = await supabase
+    // Transfer ownership (use admin client to bypass RLS since creator_id is changing)
+    const { error: updateError } = await adminClient
       .from("games")
       .update({ creator_id: new_owner_id })
       .eq("id", game_id);
