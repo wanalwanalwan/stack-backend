@@ -35,6 +35,8 @@ Deno.serve(async (req) => {
       game_format,
       session_name,
       description,
+      session_type,
+      num_rounds,
     } = body;
 
     // --- Validate required fields ---
@@ -119,6 +121,31 @@ Deno.serve(async (req) => {
       );
     }
 
+    // --- Validate session type & round robin fields ---
+
+    const validSessionType = session_type || "casual";
+    if (!["casual", "round_robin"].includes(validSessionType)) {
+      return new Response(
+        JSON.stringify({ error: "session_type must be casual or round_robin" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    if (validSessionType === "round_robin") {
+      if (!num_rounds || num_rounds < 1 || num_rounds > 30) {
+        return new Response(
+          JSON.stringify({ error: "num_rounds must be between 1 and 30 for round robin" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      if (game_format === "drill") {
+        return new Response(
+          JSON.stringify({ error: "drill format is not supported for round robin" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
     // --- Verify user has a profile ---
 
     const { data: profile, error: profileError } = await supabase
@@ -155,6 +182,13 @@ Deno.serve(async (req) => {
     // Build PostGIS point if coordinates provided
     if (latitude != null && longitude != null) {
       row.location = `SRID=4326;POINT(${longitude} ${latitude})`;
+    }
+
+    // Session type
+    row.session_type = validSessionType;
+    if (validSessionType === "round_robin") {
+      row.num_rounds = num_rounds;
+      row.round_robin_status = "waiting";
     }
 
     // Creator is automatically a participant, so start with 1 spot filled
