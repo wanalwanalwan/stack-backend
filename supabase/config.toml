@@ -400,6 +400,18 @@ verify_jwt = false
 [functions.transfer-ownership]
 verify_jwt = false
 
+[functions.send-friend-request]
+verify_jwt = false
+
+[functions.respond-friend-request]
+verify_jwt = false
+
+[functions.remove-friend]
+verify_jwt = false
+
+[functions.invite-to-game]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
