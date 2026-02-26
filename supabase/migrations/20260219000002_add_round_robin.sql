@@ -1,8 +1,32 @@
 -- Session type enum
-create type public.session_type as enum ('casual', 'round_robin');
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type t
+    join pg_namespace n on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'session_type'
+  ) then
+    create type public.session_type as enum ('casual', 'round_robin');
+  end if;
+end
+$$;
 
 -- Round robin lifecycle status
-create type public.round_robin_status as enum ('waiting', 'in_progress', 'completed');
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_type t
+    join pg_namespace n on n.oid = t.typnamespace
+    where n.nspname = 'public'
+      and t.typname = 'round_robin_status'
+  ) then
+    create type public.round_robin_status as enum ('waiting', 'in_progress', 'completed');
+  end if;
+end
+$$;
 
 -- Add new columns to games table
 alter table public.games
