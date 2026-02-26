@@ -403,6 +403,9 @@ verify_jwt = false
 [functions.send-friend-request]
 verify_jwt = false
 
+[functions.add-friend]
+verify_jwt = false
+
 [functions.respond-friend-request]
 verify_jwt = false
 

@@ -1,6 +1,9 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { createUserClient } from "../_shared/supabase-client.ts";
 
+// Compatibility alias for clients invoking "add-friend".
+// Behaves like "send-friend-request", supporting friend_id or friend_username.
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -31,7 +34,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Resolve recipient by id or username
     let resolvedFriendId: string | null = null;
     if (friend_id) {
       resolvedFriendId = friend_id;
@@ -77,7 +79,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Verify recipient exists
     const { data: recipient, error: recipientError } = await supabase
       .from("users")
       .select("id")
@@ -94,7 +95,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check for existing friendship in either direction
     const { data: existing } = await supabase
       .from("friendships")
       .select("id, status")
@@ -116,7 +116,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Insert pending request
     const { error: insertError } = await supabase
       .from("friendships")
       .insert({ user_id: user.id, friend_id: resolvedFriendId, status: "pending" });
@@ -137,3 +136,4 @@ Deno.serve(async (req) => {
     });
   }
 });
+
