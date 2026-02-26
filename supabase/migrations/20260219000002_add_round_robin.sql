@@ -30,9 +30,37 @@ $$;
 
 -- Add new columns to games table
 alter table public.games
-  add column session_type public.session_type not null default 'casual',
-  add column num_rounds smallint check (num_rounds is null or num_rounds > 0),
-  add column round_robin_status public.round_robin_status;
+  add column if not exists session_type public.session_type;
+
+alter table public.games
+  alter column session_type set default 'casual';
+
+update public.games
+set session_type = 'casual'
+where session_type is null;
+
+alter table public.games
+  alter column session_type set not null;
+
+alter table public.games
+  add column if not exists num_rounds smallint;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'games_num_rounds_positive'
+  ) then
+    alter table public.games
+      add constraint games_num_rounds_positive
+      check (num_rounds is null or num_rounds > 0);
+  end if;
+end
+$$;
+
+alter table public.games
+  add column if not exists round_robin_status public.round_robin_status;
 
 -- Round robin match table: one row per match (court) per round
 create table public.round_robin_rounds (
