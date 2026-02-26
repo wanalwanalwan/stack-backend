@@ -83,6 +83,28 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Validate: friends only
+    if (game.friends_only) {
+      const { data: friendship } = await supabase
+        .from("friendships")
+        .select("id")
+        .or(
+          `and(user_id.eq.${game.creator_id},friend_id.eq.${user.id}),and(user_id.eq.${user.id},friend_id.eq.${game.creator_id})`,
+        )
+        .eq("status", "accepted")
+        .maybeSingle();
+
+      if (!friendship) {
+        return new Response(
+          JSON.stringify({ error: "This session is friends only" }),
+          {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
+
     // Validate: user's DUPR rating is within the game's skill range
     const { data: profile, error: profileError } = await supabase
       .from("users")

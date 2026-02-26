@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
       description,
       session_type,
       num_rounds,
+      friends_only,
     } = body;
 
     // --- Validate required fields ---
@@ -190,6 +191,9 @@ Deno.serve(async (req) => {
       row.num_rounds = num_rounds;
       row.round_robin_status = "waiting";
     }
+
+    // Friends only
+    row.friends_only = friends_only === true;
 
     // Creator is automatically a participant, so start with 1 spot filled
     row.spots_filled = 1;
