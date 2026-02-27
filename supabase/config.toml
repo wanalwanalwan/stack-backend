@@ -415,6 +415,24 @@ verify_jwt = false
 [functions.invite-to-game]
 verify_jwt = false
 
+[functions.create-group-chat]
+verify_jwt = false
+
+[functions.add-group-chat-member]
+verify_jwt = false
+
+[functions.remove-group-chat-member]
+verify_jwt = false
+
+[functions.leave-group-chat]
+verify_jwt = false
+
+[functions.delete-group-chat]
+verify_jwt = false
+
+[functions.rename-group-chat]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
