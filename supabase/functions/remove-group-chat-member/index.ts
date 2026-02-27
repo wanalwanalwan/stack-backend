@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { createAdminClient, createUserClient } from "../_shared/supabase-client.ts";
+import { isMissingColumnErrorMessage, pickChatCreatorId, serializeError } from "../_shared/group-chat.ts";
 
 function isUuid(v: unknown): v is string {
   return (
@@ -48,7 +49,7 @@ Deno.serve(async (req) => {
     // Authorize: creator or admin member.
     const { data: chat, error: chatError } = await admin
       .from("group_chats")
-      .select("id, created_by")
+      .select("*")
       .eq("id", chat_id)
       .maybeSingle();
     if (chatError) throw chatError;
@@ -59,15 +60,37 @@ Deno.serve(async (req) => {
       });
     }
 
-    let isAdminOrCreator = chat.created_by === user.id;
+    const creatorId = pickChatCreatorId(chat as unknown as Record<string, unknown>);
+    let isAdminOrCreator = creatorId === user.id;
     if (!isAdminOrCreator) {
-      const { data: me, error: meError } = await admin
-        .from("group_chat_members")
-        .select("role")
-        .eq("chat_id", chat_id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (meError) throw meError;
+      const memberLookups = [
+        admin
+          .from("group_chat_members")
+          .select("role")
+          .eq("chat_id", chat_id)
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        admin
+          .from("group_chat_members")
+          .select("role")
+          .eq("group_chat_id", chat_id)
+          .eq("user_id", user.id)
+          .maybeSingle(),
+      ];
+
+      let me: { role?: string } | null = null;
+      for (const p of memberLookups) {
+        const { data, error } = await p;
+        if (error) {
+          const msg = (error as { message?: string } | null)?.message;
+          if (typeof msg === "string" && (isMissingColumnErrorMessage(msg, "chat_id") || isMissingColumnErrorMessage(msg, "group_chat_id"))) {
+            continue;
+          }
+          throw error;
+        }
+        me = data as unknown as { role?: string } | null;
+        break;
+      }
       isAdminOrCreator = me?.role === "admin";
     }
 
@@ -79,20 +102,42 @@ Deno.serve(async (req) => {
     }
 
     // Prevent removing the creator via this endpoint (use delete chat or transfer ownership flow).
-    if (user_id === chat.created_by) {
+    if (creatorId && user_id === creatorId) {
       return new Response(JSON.stringify({ error: "Cannot remove chat creator" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { data: existing, error: existingError } = await admin
-      .from("group_chat_members")
-      .select("chat_id, user_id")
-      .eq("chat_id", chat_id)
-      .eq("user_id", user_id)
-      .maybeSingle();
-    if (existingError) throw existingError;
+    let existing: unknown = null;
+    {
+      const existingLookups = [
+        admin
+          .from("group_chat_members")
+          .select("user_id")
+          .eq("chat_id", chat_id)
+          .eq("user_id", user_id)
+          .maybeSingle(),
+        admin
+          .from("group_chat_members")
+          .select("user_id")
+          .eq("group_chat_id", chat_id)
+          .eq("user_id", user_id)
+          .maybeSingle(),
+      ];
+      for (const p of existingLookups) {
+        const { data, error } = await p;
+        if (error) {
+          const msg = (error as { message?: string } | null)?.message;
+          if (typeof msg === "string" && (isMissingColumnErrorMessage(msg, "chat_id") || isMissingColumnErrorMessage(msg, "group_chat_id"))) {
+            continue;
+          }
+          throw error;
+        }
+        existing = data;
+        break;
+      }
+    }
     if (!existing) {
       return new Response(JSON.stringify({ error: "Member not found" }), {
         status: 404,
@@ -100,19 +145,33 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { error: deleteError } = await admin
-      .from("group_chat_members")
-      .delete()
-      .eq("chat_id", chat_id)
-      .eq("user_id", user_id);
-    if (deleteError) throw deleteError;
+    const deleteCandidates = [
+      admin.from("group_chat_members").delete().eq("chat_id", chat_id).eq("user_id", user_id),
+      admin.from("group_chat_members").delete().eq("group_chat_id", chat_id).eq("user_id", user_id),
+    ];
+    let deleted = false;
+    let lastDeleteError: unknown = null;
+    for (const p of deleteCandidates) {
+      const { error } = await p;
+      if (!error) {
+        deleted = true;
+        lastDeleteError = null;
+        break;
+      }
+      lastDeleteError = error;
+      const msg = (error as { message?: string } | null)?.message;
+      if (typeof msg === "string" && (isMissingColumnErrorMessage(msg, "chat_id") || isMissingColumnErrorMessage(msg, "group_chat_id"))) {
+        continue;
+      }
+    }
+    if (!deleted) throw lastDeleteError ?? new Error("Failed to remove member");
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: "Internal Server Error", detail: serializeError(err) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

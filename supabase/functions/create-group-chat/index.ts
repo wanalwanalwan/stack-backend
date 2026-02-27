@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
-import { createUserClient } from "../_shared/supabase-client.ts";
+import { createAdminClient, createUserClient } from "../_shared/supabase-client.ts";
+import { isMissingColumnErrorMessage, pickChatCreatorId, serializeError } from "../_shared/group-chat.ts";
 
 function isUuid(v: unknown): v is string {
   return (
@@ -17,6 +18,7 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = createUserClient(req);
+    const admin = createAdminClient();
 
     const {
       data: { user },
@@ -54,31 +56,87 @@ Deno.serve(async (req) => {
     // Allow creating a chat even if only 1 other member is provided (creator + 1 friend).
     // If no other members are provided, we still create the chat with just the creator.
 
-    const { data: chat, error: chatError } = await supabase
-      .from("group_chats")
-      .insert({
-        created_by: user.id,
-        name: name && name.length > 0 ? name : null,
-      })
-      .select("id, created_by, name, created_at")
-      .single();
-
-    if (chatError) throw chatError;
-
-    const membersToInsert = [
-      { chat_id: chat.id, user_id: user.id, role: "admin" },
-      ...otherMemberIds.map((id) => ({ chat_id: chat.id, user_id: id, role: "member" })),
+    const chatName = name && name.length > 0 ? name : null;
+    const chatInsertCandidates: Array<Record<string, unknown>> = [
+      { created_by: user.id, name: chatName },
+      { creator_id: user.id, name: chatName },
     ];
 
-    const { error: memberError } = await supabase.from("group_chat_members").insert(membersToInsert);
-    if (memberError) throw memberError;
+    let chat: Record<string, unknown> | null = null;
+    let lastChatError: unknown = null;
+    for (const row of chatInsertCandidates) {
+      const { data, error } = await admin.from("group_chats").insert(row).select("*").single();
+      if (!error && data) {
+        chat = data as unknown as Record<string, unknown>;
+        lastChatError = null;
+        break;
+      }
+      lastChatError = error ?? lastChatError;
+      const msg = (error as { message?: string } | null)?.message;
+      if (typeof msg === "string") {
+        // If the failure is because a specific creator column doesn't exist, try the next candidate.
+        if (
+          isMissingColumnErrorMessage(msg, "created_by") ||
+          isMissingColumnErrorMessage(msg, "creator_id")
+        ) {
+          continue;
+        }
+      }
+    }
 
-    return new Response(JSON.stringify({ success: true, chat }), {
+    if (!chat) {
+      throw lastChatError ?? new Error("Failed to create chat");
+    }
+
+    const chatId = chat["id"];
+    if (typeof chatId !== "string" || chatId.length === 0) {
+      throw new Error("Chat created but missing id");
+    }
+
+    const membersToInsert = [
+      { user_id: user.id, role: "admin" },
+      ...otherMemberIds.map((id) => ({ user_id: id, role: "member" })),
+    ];
+
+    // Membership schema can vary; try common chat id column names.
+    const memberInsertCandidates = [
+      membersToInsert.map((m) => ({ ...m, chat_id: chatId })),
+      membersToInsert.map((m) => ({ ...m, group_chat_id: chatId })),
+    ];
+    let memberInserted = false;
+    let lastMemberError: unknown = null;
+    for (const rows of memberInsertCandidates) {
+      const { error } = await admin.from("group_chat_members").insert(rows);
+      if (!error) {
+        memberInserted = true;
+        lastMemberError = null;
+        break;
+      }
+      lastMemberError = error;
+      const msg = (error as { message?: string } | null)?.message;
+      if (typeof msg === "string") {
+        if (isMissingColumnErrorMessage(msg, "chat_id") || isMissingColumnErrorMessage(msg, "group_chat_id")) {
+          continue;
+        }
+      }
+    }
+    if (!memberInserted) throw lastMemberError ?? new Error("Failed to add chat members");
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        chat: {
+          ...chat,
+          created_by: pickChatCreatorId(chat),
+        },
+      }),
+      {
       status: 201,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+      },
+    );
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: "Internal Server Error", detail: serializeError(err) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

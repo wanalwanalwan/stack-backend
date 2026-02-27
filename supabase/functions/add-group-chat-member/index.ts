@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { createAdminClient, createUserClient } from "../_shared/supabase-client.ts";
+import { isMissingColumnErrorMessage, pickChatCreatorId, serializeError } from "../_shared/group-chat.ts";
 
 function isUuid(v: unknown): v is string {
   return (
@@ -55,7 +56,7 @@ Deno.serve(async (req) => {
     // Authorize: creator or admin member of the chat.
     const { data: chat, error: chatError } = await admin
       .from("group_chats")
-      .select("id, created_by")
+      .select("*")
       .eq("id", chat_id)
       .maybeSingle();
     if (chatError) throw chatError;
@@ -66,15 +67,37 @@ Deno.serve(async (req) => {
       });
     }
 
-    let isAdminOrCreator = chat.created_by === user.id;
+    const creatorId = pickChatCreatorId(chat as unknown as Record<string, unknown>);
+    let isAdminOrCreator = creatorId === user.id;
     if (!isAdminOrCreator) {
-      const { data: me, error: meError } = await admin
-        .from("group_chat_members")
-        .select("role")
-        .eq("chat_id", chat_id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (meError) throw meError;
+      const memberLookups = [
+        admin
+          .from("group_chat_members")
+          .select("role")
+          .eq("chat_id", chat_id)
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        admin
+          .from("group_chat_members")
+          .select("role")
+          .eq("group_chat_id", chat_id)
+          .eq("user_id", user.id)
+          .maybeSingle(),
+      ];
+
+      let me: { role?: string } | null = null;
+      for (const p of memberLookups) {
+        const { data, error } = await p;
+        if (error) {
+          const msg = (error as { message?: string } | null)?.message;
+          if (typeof msg === "string" && (isMissingColumnErrorMessage(msg, "chat_id") || isMissingColumnErrorMessage(msg, "group_chat_id"))) {
+            continue;
+          }
+          throw error;
+        }
+        me = data as unknown as { role?: string } | null;
+        break;
+      }
       isAdminOrCreator = me?.role === "admin";
     }
 
@@ -85,13 +108,35 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: existing, error: existingError } = await admin
-      .from("group_chat_members")
-      .select("chat_id, user_id")
-      .eq("chat_id", chat_id)
-      .eq("user_id", user_id)
-      .maybeSingle();
-    if (existingError) throw existingError;
+    let existing: unknown = null;
+    {
+      const existingLookups = [
+        admin
+          .from("group_chat_members")
+          .select("user_id")
+          .eq("chat_id", chat_id)
+          .eq("user_id", user_id)
+          .maybeSingle(),
+        admin
+          .from("group_chat_members")
+          .select("user_id")
+          .eq("group_chat_id", chat_id)
+          .eq("user_id", user_id)
+          .maybeSingle(),
+      ];
+      for (const p of existingLookups) {
+        const { data, error } = await p;
+        if (error) {
+          const msg = (error as { message?: string } | null)?.message;
+          if (typeof msg === "string" && (isMissingColumnErrorMessage(msg, "chat_id") || isMissingColumnErrorMessage(msg, "group_chat_id"))) {
+            continue;
+          }
+          throw error;
+        }
+        existing = data;
+        break;
+      }
+    }
     if (existing) {
       return new Response(JSON.stringify({ error: "User is already a member" }), {
         status: 409,
@@ -99,19 +144,33 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { error: insertError } = await admin.from("group_chat_members").insert({
-      chat_id,
-      user_id,
-      role: "member",
-    });
-    if (insertError) throw insertError;
+    const insertCandidates = [
+      { chat_id, user_id, role: "member" },
+      { group_chat_id: chat_id, user_id, role: "member" },
+    ];
+    let inserted = false;
+    let lastInsertError: unknown = null;
+    for (const row of insertCandidates) {
+      const { error } = await admin.from("group_chat_members").insert(row);
+      if (!error) {
+        inserted = true;
+        lastInsertError = null;
+        break;
+      }
+      lastInsertError = error;
+      const msg = (error as { message?: string } | null)?.message;
+      if (typeof msg === "string" && (isMissingColumnErrorMessage(msg, "chat_id") || isMissingColumnErrorMessage(msg, "group_chat_id"))) {
+        continue;
+      }
+    }
+    if (!inserted) throw lastInsertError ?? new Error("Failed to add member");
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: "Internal Server Error", detail: serializeError(err) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

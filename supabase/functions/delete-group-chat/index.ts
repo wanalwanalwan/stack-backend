@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { createAdminClient, createUserClient } from "../_shared/supabase-client.ts";
+import { pickChatCreatorId, serializeError } from "../_shared/group-chat.ts";
 
 function isUuid(v: unknown): v is string {
   return (
@@ -46,7 +47,7 @@ Deno.serve(async (req) => {
 
     const { data: chat, error: chatError } = await admin
       .from("group_chats")
-      .select("id, created_by")
+      .select("*")
       .eq("id", chat_id)
       .maybeSingle();
     if (chatError) throw chatError;
@@ -57,7 +58,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (chat.created_by !== user.id) {
+    const creatorId = pickChatCreatorId(chat as unknown as Record<string, unknown>);
+    if (!creatorId || creatorId !== user.id) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -72,7 +74,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: "Internal Server Error", detail: serializeError(err) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

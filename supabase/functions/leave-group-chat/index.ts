@@ -1,5 +1,6 @@
 import { corsHeaders } from "../_shared/cors.ts";
 import { createAdminClient, createUserClient } from "../_shared/supabase-client.ts";
+import { isMissingColumnErrorMessage, pickChatCreatorId, serializeError } from "../_shared/group-chat.ts";
 
 function isUuid(v: unknown): v is string {
   return (
@@ -46,7 +47,7 @@ Deno.serve(async (req) => {
 
     const { data: chat, error: chatError } = await admin
       .from("group_chats")
-      .select("id, created_by")
+      .select("*")
       .eq("id", chat_id)
       .maybeSingle();
     if (chatError) throw chatError;
@@ -57,26 +58,41 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (chat.created_by === user.id) {
+    const creatorId = pickChatCreatorId(chat as unknown as Record<string, unknown>);
+    if (creatorId === user.id) {
       return new Response(JSON.stringify({ error: "Creator cannot leave their own chat" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { error: deleteError } = await admin
-      .from("group_chat_members")
-      .delete()
-      .eq("chat_id", chat_id)
-      .eq("user_id", user.id);
-    if (deleteError) throw deleteError;
+    const deleteCandidates = [
+      admin.from("group_chat_members").delete().eq("chat_id", chat_id).eq("user_id", user.id),
+      admin.from("group_chat_members").delete().eq("group_chat_id", chat_id).eq("user_id", user.id),
+    ];
+    let deleted = false;
+    let lastDeleteError: unknown = null;
+    for (const p of deleteCandidates) {
+      const { error } = await p;
+      if (!error) {
+        deleted = true;
+        lastDeleteError = null;
+        break;
+      }
+      lastDeleteError = error;
+      const msg = (error as { message?: string } | null)?.message;
+      if (typeof msg === "string" && (isMissingColumnErrorMessage(msg, "chat_id") || isMissingColumnErrorMessage(msg, "group_chat_id"))) {
+        continue;
+      }
+    }
+    if (!deleted) throw lastDeleteError ?? new Error("Failed to leave chat");
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), {
+    return new Response(JSON.stringify({ error: "Internal Server Error", detail: serializeError(err) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
